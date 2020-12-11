@@ -3,6 +3,19 @@
 //  CircularQueueTests
 //
 //  Created by Valeriano Della Longa on 2020/11/15.
+//  Copyright © 2020 Valeriano Della Longa. All rights reserved.
+//
+//  Permission to use, copy, modify, and/or distribute this software for any
+//  purpose with or without fee is hereby granted, provided that the above
+//  copyright notice and this permission notice appear in all copies.
+//
+//  THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+//  WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+//  MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
+//  SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+//  WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+//  ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR
+//  IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 //
 
 import XCTest
@@ -150,7 +163,6 @@ final class CircularQueueTests: XCTestCase {
         
         // index(after:), index(before:),
         //formIndex(after:), formIndexBefore(:)
-        
         var idx = sut.startIndex
         let nextIdx = sut.index(after: idx)
         XCTAssertGreaterThan(nextIdx, idx)
@@ -180,7 +192,6 @@ final class CircularQueueTests: XCTestCase {
             sut.formIndex(before: &idx)
         }
         XCTAssertEqual(offsetByNegative3, idx)
-        
         
         // index(:_, offsetBy:, limitedBy:)
         let offsetByCountPlusOne = sut.index(sut.startIndex, offsetBy: (sut.count + 1), limitedBy: sut.endIndex)
@@ -259,7 +270,7 @@ final class CircularQueueTests: XCTestCase {
         for idx in slice.startIndex..<slice.endIndex {
             XCTAssertNotEqual(slice[idx], sut[idx])
         }
-        XCTAssertFalse(sut.storage === slice.storage)
+        XCTAssertFalse(sut.storage === slice.base.storage)
         
         // Let's also check when mutating a slice:
         sut = [1, 2, 3, 4, 5]
@@ -271,7 +282,7 @@ final class CircularQueueTests: XCTestCase {
         for idx in mutSlice.startIndex..<mutSlice.endIndex {
             XCTAssertNotEqual(mutSlice[idx], sut[idx])
         }
-        XCTAssertFalse(sut.storage === mutSlice.storage)
+        XCTAssertFalse(sut.storage === mutSlice.base.storage)
     }
     
     func testIsEmpty() {
@@ -392,6 +403,21 @@ final class CircularQueueTests: XCTestCase {
         }
         wait(for: [exp3], timeout: 1)
         assertValueSemantics(copy)
+        
+        // Slice implementation works too:
+        sut = CircularQueue(1...10)
+        let slice = sut[1...3]
+        var sliceBuffElements: Array<Int>!
+        let exp4 = expectation(description: "closure completes")
+        let result3 = slice.withContiguousStorageIfAvailable { buff -> Bool in
+            defer { exp4.fulfill() }
+            sliceBuffElements = Array(buff)
+            
+            return true
+        }
+        wait(for: [exp4], timeout: 0.1)
+        XCTAssertNotNil(result3)
+        XCTAssertEqual(sliceBuffElements, Array(slice))
     }
     
     func testWithContiguousStorageIfAvailable() {
@@ -420,6 +446,28 @@ final class CircularQueueTests: XCTestCase {
         wait(for: [exp2], timeout: 1)
         XCTAssertNotNil(result2)
         XCTAssertEqual(copiedValues, Array(sut[rangeToPick]))
+        
+        // Slice implementation works too:
+        sut = CircularQueue(1...10)
+        var slice = sut[1...3]
+        var sliceBuffElements: Array<Int>!
+        let exp3 = expectation(description: "closure completes")
+        let result3 = slice.withContiguousMutableStorageIfAvailable { buff -> Bool in
+            defer { exp3.fulfill() }
+            sliceBuffElements = []
+            for i in buff.startIndex..<buff.endIndex {
+                buff[i] *= 10
+                sliceBuffElements.append(buff[i])
+            }
+            
+            return true
+        }
+        wait(for: [exp3], timeout: 0.1)
+        XCTAssertNotNil(result3)
+        XCTAssertEqual(sliceBuffElements, Array(slice))
+        
+        // value semantics on Slice:
+        XCTAssertNotEqual(sut, slice.base)
     }
     
     // MARK: - Functional Programming methods
@@ -595,8 +643,8 @@ final class CircularQueueTests: XCTestCase {
     }
     
     func testReplaceSubrange() {
-        // Leverages on CircularQueueStorage.replace(_:,with:) thus it is guaranteed
-        // by CircularQueueStorageTests.
+        // Leverages on CircularBuffer thus it is guaranteed
+        // by CircularBufferTests.
         
         // Let's test for value semantics:
         sut = [1, 2, 3, 4, 5]
@@ -606,8 +654,8 @@ final class CircularQueueTests: XCTestCase {
     }
     
     func testAppendElement() {
-        // Leverages on CircularQueueStorage.append(contentsOf:), thus it is guaranteed
-        // by CircularQueueStorageTests.
+        // Leverages on CircularBuffer thus it is guaranteed
+        // by CircularBufferTests.
         
         // let's test value semantics:
         var copy = sut!
@@ -616,8 +664,8 @@ final class CircularQueueTests: XCTestCase {
     }
     
     func testAppendContentsOfSequence() {
-        // Leverages on CircularQueueStorage.append(contentsOf:), thus it is guaranteed
-        // by CircularQueueStorageTests.
+        // Leverages on CircularBuffer thus it is guaranteed
+        // by CircularBufferTests.
         
         // let's test value semantics:
         var copy = sut!
@@ -626,14 +674,8 @@ final class CircularQueueTests: XCTestCase {
     }
     
     func testInsertElementAt() {
-        let sutElements = [1, 2, 3, 4, 5]
-        for i in sutElements.startIndex...sutElements.endIndex {
-            var expectedResult = sutElements
-            expectedResult.insert(0, at: i)
-            sut = CircularQueue(sutElements)
-            sut.insert(0, at: i)
-            XCTAssertTrue(sut.elementsEqual(expectedResult))
-        }
+        // Leverages on CircularBuffer thus it is guaranteed
+        // by CircularBufferTests.
         
         // test value semantics:
         sut = [1, 2, 3, 4, 5]
@@ -643,18 +685,8 @@ final class CircularQueueTests: XCTestCase {
     }
     
     func testInsertCollectionAt() {
-        let sutElements = [1, 2, 3, 4, 5]
-        let other = [10, 20, 30, 40, 50]
-        for i in sutElements.startIndex...sutElements.endIndex {
-            var expectedResult = sutElements
-            sut = CircularQueue(sutElements)
-            sut.insert(contentsOf: [], at: i)
-            XCTAssertTrue(sut.elementsEqual(expectedResult))
-            
-            expectedResult.insert(contentsOf: other, at: i)
-            sut.insert(contentsOf: other, at: i)
-            XCTAssertTrue(sut.elementsEqual(expectedResult))
-        }
+        // Leverages on CircularBuffer thus it is guaranteed
+        // by CircularBufferTests.
         
         // test value semantics:
         sut = [1, 2, 3, 4, 5]
@@ -664,14 +696,8 @@ final class CircularQueueTests: XCTestCase {
     }
     
     func testRemoveElementAt() {
-        let elements = [1, 2, 3, 4, 5]
-        for i in elements.startIndex..<elements.endIndex {
-            sut = CircularQueue(elements)
-            var expectedResult = elements
-            expectedResult.remove(at: i)
-            XCTAssertEqual(sut.remove(at: i), elements[i])
-            XCTAssertTrue(sut.elementsEqual(expectedResult))
-        }
+        // Leverages on CircularBuffer thus it is guaranteed
+        // by CircularBufferTests.
         
         // test value semantics:
         sut = [1, 2, 3, 4, 5]
@@ -681,17 +707,8 @@ final class CircularQueueTests: XCTestCase {
     }
     
     func testRemoveSubrange() {
-        let elements = [1, 2, 3, 4, 5]
-        for lowerBound in elements.startIndex..<elements.endIndex {
-            for subrangeCount in 0...(elements.count - lowerBound) {
-                let subrange = lowerBound..<(lowerBound + subrangeCount)
-                sut = CircularQueue(elements)
-                var expectedResult = elements
-                expectedResult.removeSubrange(subrange)
-                sut.removeSubrange(subrange)
-                XCTAssertTrue(sut.elementsEqual(expectedResult))
-            }
-        }
+        // Leverages on CircularBuffer thus it is guaranteed
+        // by CircularBufferTests.
         
         // test value semantics:
         sut = [1, 2, 3, 4, 5]
@@ -701,16 +718,8 @@ final class CircularQueueTests: XCTestCase {
     }
     
     func testRemoveFirstElement() {
-        let elements = [1, 2, 3]
-        sut = CircularQueue(elements)
-        
-        XCTAssertEqual(sut.removeFirst(), elements.first)
-        XCTAssertEqual(sut.count, elements.count - 1)
-        XCTAssertEqual(Array(sut), Array(elements.dropFirst()))
-        
-        sut = [1]
-        let _ = sut.removeFirst()
-        XCTAssertTrue(sut.isEmpty)
+        // Leverages on CircularBuffer thus it is guaranteed
+        // by CircularBufferTests.
         
         // value semantics:
         sut = [1, 2, 3, 4, 5]
@@ -720,14 +729,8 @@ final class CircularQueueTests: XCTestCase {
     }
     
     func testRemoveFirstKElements() {
-        let elements = [1, 2, 3, 4, 5]
-        for k in 0...elements.count {
-            var expectedResult = elements
-            expectedResult.removeFirst(k)
-            sut = CircularQueue(elements)
-            sut.removeFirst(k)
-            XCTAssertTrue(sut.elementsEqual(expectedResult))
-        }
+        // Leverages on CircularBuffer thus it is guaranteed
+        // by CircularBufferTests.
         
         // test value semantics:
         sut = [1, 2, 3, 4, 5]
@@ -784,16 +787,8 @@ final class CircularQueueTests: XCTestCase {
     }
     
     func testRemoveLastElement() {
-        let elements = [1, 2, 3]
-        sut = CircularQueue(elements)
-        
-        XCTAssertEqual(sut.removeLast(), elements.last)
-        XCTAssertEqual(sut.count, elements.count - 1)
-        XCTAssertEqual(Array(sut), Array(elements.dropLast()))
-        
-        sut = [1]
-        let _ = sut.removeLast()
-        XCTAssertTrue(sut.isEmpty)
+        // Leverages on CircularBuffer thus it is guaranteed
+        // by CircularBufferTests.
         
         // test value semantics:
         sut = [1, 2, 3, 4, 5]
@@ -803,14 +798,8 @@ final class CircularQueueTests: XCTestCase {
     }
     
     func testRemoveLastKElements() {
-        let elements = [1, 2, 3, 4, 5]
-        for k in 0...elements.count {
-            var expectedResult = elements
-            expectedResult.removeLast(k)
-            sut = CircularQueue(elements)
-            sut.removeLast(k)
-            XCTAssertTrue(sut.elementsEqual(expectedResult))
-        }
+        // Leverages on CircularBuffer thus it is guaranteed
+        // by CircularBufferTests.
         
         // test value semantics:
         sut = [1, 2, 3, 4, 5]
@@ -821,8 +810,8 @@ final class CircularQueueTests: XCTestCase {
     
     // MARK: - Specific CircularQueue methods tests
     func testPopFront() {
-        // Leverages on CircularQueueStorage.popFront(), thus it is guaranteed
-        // by CircularQueueStorageTests.
+        // Leverages on CircularBuffer thus it is guaranteed
+        // by CircularBufferTests.
         
         // let's test value semantics:
         sut = [1, 2, 3, 4, 5]
@@ -832,8 +821,8 @@ final class CircularQueueTests: XCTestCase {
     }
     
     func testPushFrontNewElement() {
-        // Leverages on CircularQueueStorage.pushFront(_:), thus it is guaranteed
-        // by CircularQueueStorageTests.
+        // Leverages on CircularBuffer thus it is guaranteed
+        // by CircularBufferTests.
         
         // let's test value semantics:
         sut = [1 ,2, 3, 4, 5]
@@ -844,8 +833,8 @@ final class CircularQueueTests: XCTestCase {
     
     
     func testPushFrontSequence() {
-        // Leverages on CircularQueueStorage.pushFront(contentsOf:), thus it is guaranteed
-        // by CircularQeueueStorageTests.
+        // Leverages on CircularBuffer thus it is guaranteed
+        // by CircularBufferTests.
         
         // let's test value semantics:
         sut = [1, 2, 3, 4, 5]
@@ -855,8 +844,8 @@ final class CircularQueueTests: XCTestCase {
     }
     
     func testPopBack() {
-        // Leverages on CircularQueueStorage.popBack(), thus it is guaranteed
-        // by CircularQueueStorageTests.
+        // Leverages on CircularBuffer thus it is guaranteed
+        // by CircularBufferTests.
         
         // let's test value semantics:
         sut = [1, 2, 3, 4, 5]
@@ -866,8 +855,8 @@ final class CircularQueueTests: XCTestCase {
     }
     
     func testPushBackNewElement() {
-        // Leverages on CircularQueueStorage.pushBack(_:), thus it is guaranteed
-        // by CircularQueueStorageTests.
+        // Leverages on CircularBuffer thus it is guaranteed
+        // by CircularBufferTests.
         
         // let's test value semantics:
         sut = [1, 2, 3, 4, 5]
@@ -877,8 +866,8 @@ final class CircularQueueTests: XCTestCase {
     }
     
     func testPushBackSequence() {
-        // Leverages on CircularQueueStorage.pushBack(contentsOf:), thus it is guaranteed
-        // by CircularQueueStorageTests.
+        // Leverages on CircularBuffer thus it is guaranteed
+        // by CircularBufferTests.
         
         // let's test value semantics:
         sut = [1, 2, 3, 4, 5]
@@ -1019,103 +1008,9 @@ final class CircularQueueTests: XCTestCase {
         XCTAssertEqual(sut.debugDescription, "Optional(CircularQueue.CircularQueue<Swift.Int>((capacity: 5)[1, 2, 3, 4, 5]))")
     }
     
-    // MARK: - Performance tests
-    func testCircularQueuePerformanceAtSmallCount() {
-        measure(performanceLoopCircularQueueSmallCount)
-    }
-    
-    func testArrayPerformanceAtSmallCount() {
-        measure(performanceLoopArraySmallCount)
-    }
-    
-    func testCircularQueuePerformanceAtLargeCount() {
-        measure(performanceLoopCircularQueueLargeCount)
-    }
-    
-    func testArrayPerformanceAtLargeCount() {
-        measure(performanceLoopArrayLargeCount)
-    }
-    
     // MARK: - Private tests helepers
     func assertValueSemantics(_ copy: CircularQueue<Int>, file: StaticString = #file, line: UInt = #line) {
         assertAreDifferentValuesAndHaveDifferentStorage(lhs: sut, rhs: copy, file: file, line: line)
-    }
-    
-    // MARK: - Private helpers
-    private func performanceLoopCircularQueueSmallCount() {
-        let outerCount: Int = 10_000
-        let innerCount: Int = 20
-        var accumulator = 0
-        for _ in 1...outerCount {
-            var queue = CircularQueue<Int>()
-            queue.reserveCapacity(innerCount)
-            for i in 1...innerCount {
-                queue.enqueue(i)
-                accumulator ^= (queue.last ?? 0)
-            }
-            for _ in 1...innerCount {
-                accumulator ^= (queue.first ?? 0)
-                queue.dequeue()
-            }
-        }
-        XCTAssert(accumulator == 0)
-    }
-    
-    private func performanceLoopArraySmallCount() {
-        let outerCount: Int = 10_000
-        let innerCount: Int = 20
-        var accumulator = 0
-        for _ in 1...outerCount {
-            var array = Array<Int>()
-            array.reserveCapacity(innerCount)
-            for i in 1...innerCount {
-                array.append(i)
-                accumulator ^= (array.last ?? 0)
-            }
-            for _ in 1...innerCount {
-                accumulator ^= (array.first ?? 0)
-                array.remove(at: 0)
-            }
-        }
-        XCTAssert(accumulator == 0)
-    }
-    
-    private func performanceLoopCircularQueueLargeCount() {
-        let outerCount: Int = 10
-        let innerCount: Int = 20_000
-        var accumulator = 0
-        for _ in 1...outerCount {
-            var queue = CircularQueue<Int>()
-            queue.reserveCapacity(innerCount)
-            for i in 1...innerCount {
-                queue.enqueue(i)
-                accumulator ^= (queue.last ?? 0)
-            }
-            for _ in 1...innerCount {
-                accumulator ^= (queue.first ?? 0)
-                queue.dequeue()
-            }
-        }
-        XCTAssert(accumulator == 0)
-    }
-    
-    private func performanceLoopArrayLargeCount() {
-        let outerCount: Int = 10
-        let innerCount: Int = 20_000
-        var accumulator = 0
-        for _ in 1...outerCount {
-            var array = Array<Int>()
-            array.reserveCapacity(innerCount)
-            for i in 1...innerCount {
-                array.append(i)
-                accumulator ^= (array.last ?? 0)
-            }
-            for _ in 1...innerCount {
-                accumulator ^= (array.first ?? 0)
-                array.remove(at: 0)
-            }
-        }
-        XCTAssert(accumulator == 0)
     }
     
 }

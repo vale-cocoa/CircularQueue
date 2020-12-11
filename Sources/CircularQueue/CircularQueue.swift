@@ -19,6 +19,7 @@
 //
 
 import Queue
+import CircularBuffer
 
 /// A queue data structure adopting the *FIFO* (first-in, first-out) policy and able to store a predefined
 /// and static number of elements only; that is attempting to enqueue new elements when its storage is full,
@@ -124,13 +125,13 @@ import Queue
 ///     // Prints: "CircularQueue(capacity: 12)[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]"
 ///
 public struct CircularQueue<Element> {
-    private(set) var storage: CircularQueueStorage<Element>
+    private(set) var storage: CircularBuffer<Element>
     
     /// Returns a new empty `CircularQueue` instance, with a `capacity` value of `0`.
     ///
     /// - Returns: A new empty `CircularQueue` instance, initialized with a `capacity` value of `0`.
     public init() {
-        self.storage = CircularQueueStorage()
+        self.storage = CircularBuffer(capacity: 0, usingSmartCapacityPolicy: false)
     }
     
     /// Returns a new empty `CircularQueue` instance, able to hold the specified count of elements.
@@ -139,7 +140,7 @@ public struct CircularQueue<Element> {
     ///                 **Must not be negative**.
     /// - Returns:  A new empty queue instance, able to hold the specified count of elements.
     public init(_ k: Int = 0) {
-        self.storage = CircularQueueStorage(k)
+        self.storage = CircularBuffer(capacity: k, usingSmartCapacityPolicy: false)
     }
     
     /// Returns a new `CircularQueue` instance initialized with the contents of the given
@@ -154,7 +155,7 @@ public struct CircularQueue<Element> {
         guard
             let other = elements as? Self
         else {
-            self.storage = CircularQueueStorage(elements)
+            self.storage = CircularBuffer(elements: elements, usingSmartCapacityPolicy: false)
             
             return
         }
@@ -163,7 +164,7 @@ public struct CircularQueue<Element> {
     }
     
     public init(repeating repeatedValue: Element, count: Int) {
-        self.storage = CircularQueueStorage(repeating: repeatedValue, count: count)
+        self.storage = CircularBuffer(repeating: repeatedValue, count: count, usingSmartCapacityPolicy: false)
     }
     
 }
@@ -193,7 +194,7 @@ extension CircularQueue: MutableCollection, BidirectionalCollection, RandomAcces
     
     public typealias Iterator = IndexingIterator<CircularQueue<Element>>
     
-    public typealias SubSequence = CircularQueueSlice<Element>
+    public typealias SubSequence = Slice<CircularQueue<Element>>
     
     public var count: Int { storage.count }
     
@@ -263,9 +264,9 @@ extension CircularQueue: MutableCollection, BidirectionalCollection, RandomAcces
         }
     }
     
-    public subscript(bounds: Range<Int>) -> CircularQueueSlice<Element> {
+    public subscript(bounds: Range<Int>) -> Slice<CircularQueue<Element>> {
         get {
-            CircularQueueSlice(base: self, bounds: bounds)
+            Slice(base: self, bounds: bounds)
         }
         
         set {
@@ -380,68 +381,83 @@ extension CircularQueue: RangeReplaceableCollection {
     
     public mutating func replaceSubrange<C: Collection>(_ subrange: Range<Int>, with other: C) where Element == C.Iterator.Element {
         if subrange.count == 0 && other.count == 0 { return }
-        
         _makeUnique()
-        storage.replaceSubrange(subrange, with: other)
+        storage.replace(subrange: subrange, with: other, keepCapacity: false, usingSmartCapacityPolicy: false)
     }
     
     public mutating func insert(_ newElement: Element, at i: Int) {
         _makeUnique()
-        storage.replaceSubrange(i..<i, with: CollectionOfOne(newElement))
+        storage.insertAt(index: i, contentsOf: CollectionOfOne(newElement), usingSmartCapacityPolicy: false)
     }
     
     public mutating func insert<C: Collection>(contentsOf newElements: C, at i: Int) where Element == C.Iterator.Element {
         guard newElements.count > 0 else { return }
         
         _makeUnique()
-        storage.replaceSubrange(i..<i, with: newElements)
+        storage.insertAt(index: i, contentsOf: newElements, usingSmartCapacityPolicy: false)
     }
     
     public mutating func append(_ newElement: Self.Element) {
         _makeUnique()
-        storage.replaceSubrange(storage.count..<storage.count, with: CollectionOfOne(newElement))
+        storage.insertAt(index: count, contentsOf: CollectionOfOne(newElement), usingSmartCapacityPolicy: false)
     }
     
     public mutating func append<S>(contentsOf newElements: S) where S : Sequence, Self.Element == S.Iterator.Element {
         _makeUnique()
-        storage.append(contentsOf: newElements)
+        let done = newElements.withContiguousStorageIfAvailable { buff -> Bool in
+            storage.insertAt(index: count, contentsOf: buff, usingSmartCapacityPolicy: false)
+            
+            return true
+        } ?? false
+        if !done {
+            for newElement in newElements {
+                storage.insertAt(index: count, contentsOf: CollectionOfOne(newElement), usingSmartCapacityPolicy: false)
+            }
+        }
     }
     
     public mutating func removeSubrange(_ bounds: Range<Int>) {
         guard bounds.count > 0 else { return }
         
         _makeUnique()
-        storage.replaceSubrange(bounds, with: [])
+        storage.removeAt(index: bounds.lowerBound, count: bounds.count, keepCapacity: false, usingSmartCapacityPolicy: false)
     }
     
     public mutating func remove(at i: Int) -> Element {
         defer {
             self._makeUnique()
-            self.storage.replaceSubrange(i..<(i + 1), with: [])
+            self.storage.removeAt(index: i, count: 1, keepCapacity: false, usingSmartCapacityPolicy: false)
         }
         
         return self[i]
     }
     
     public mutating func removeFirst() -> Element {
-        remove(at: startIndex)
+        defer {
+            self._makeUnique()
+            self.storage.removeFirst(1, keepCapacity: false, usingSmartCapacityPolicy: false)
+        }
+        
+        return storage.first!
     }
     
     public mutating func removeLast() -> Element {
-        remove(at: endIndex - 1)
+        defer {
+            self._makeUnique()
+            self.storage.removeLast(1, keepCapacity: false, usingSmartCapacityPolicy: false)
+        }
+        
+        return storage.last!
     }
     
     public mutating func removeFirst(_ k: Int) {
-        precondition(k >= 0 && k <= count, "k must not be negative and less than or equal count")
         _makeUnique()
-        replaceSubrange(0..<k, with: [])
+        storage.removeFirst(k, keepCapacity: false, usingSmartCapacityPolicy: false)
     }
     
     public mutating func removeLast(_ k: Int) {
-        precondition(k >= 0 && k <= count, "k must not be negative and less than or equal count")
         _makeUnique()
-        let position = storage.count - k
-        storage.replaceSubrange(position..<count, with: [])
+        storage.removeLast(k, keepCapacity: false, usingSmartCapacityPolicy: false)
     }
     
     @available(*, deprecated, renamed: "removeAll(keepingCapacity:)")
@@ -451,7 +467,7 @@ extension CircularQueue: RangeReplaceableCollection {
     
     public mutating func removeAll(keepingCapacity keepCapacity: Bool) {
         _makeUnique()
-        storage.removeAll(keepingCapacity: keepCapacity)
+        storage.removeAll(keepCapacity: keepCapacity, usingSmartCapacityPolicy: false)
     }
     
     @discardableResult
@@ -640,7 +656,7 @@ extension CircularQueue: Codable where Element: Codable {
             throw Error.decodingError("capacity is less greater than stored elements count")
         }
         
-        self.storage = CircularQueueStorage(elements)
+        self.storage = CircularBuffer(elements: elements, usingSmartCapacityPolicy: false)
         self.storage.reserveCapacity(residualCapacity)
     }
     
@@ -689,9 +705,9 @@ extension CircularQueue {
     
     private mutating func _makeUnique(additionalCapacity: Int = 0) {
         if !_isUnique {
-            self.storage = storage.copy(additionalCapacity)
+            self.storage = storage.copy(additionalCapacity: additionalCapacity, usingSmartCapacityPolicy: false)
         } else if additionalCapacity > 0 {
-            storage.reserveCapacity(residualCapacity + additionalCapacity)
+            storage.reserveCapacity(residualCapacity + additionalCapacity, usingSmartCapacityPolicy: false)
         }
     }
     
