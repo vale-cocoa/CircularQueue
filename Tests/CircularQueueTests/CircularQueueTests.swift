@@ -406,18 +406,25 @@ final class CircularQueueTests: XCTestCase {
         
         // Slice implementation works too:
         sut = CircularQueue(1...10)
-        let slice = sut[1...3]
+        var slice = sut[1...3]
         var sliceBuffElements: Array<Int>!
         let exp4 = expectation(description: "closure completes")
-        let result3 = slice.withContiguousStorageIfAvailable { buff -> Bool in
+        let result4 = slice.withContiguousMutableStorageIfAvailable { buff -> Bool in
             defer { exp4.fulfill() }
-            sliceBuffElements = Array(buff)
+            sliceBuffElements = []
+            for i in buff.startIndex..<buff.endIndex {
+                buff[i] *= 10
+                sliceBuffElements.append(buff[i])
+            }
             
             return true
         }
         wait(for: [exp4], timeout: 0.1)
-        XCTAssertNotNil(result3)
+        XCTAssertNotNil(result4)
         XCTAssertEqual(sliceBuffElements, Array(slice))
+        
+        // value semantics on Slice:
+        XCTAssertNotEqual(sut, slice.base)
     }
     
     func testWithContiguousStorageIfAvailable() {
@@ -449,25 +456,18 @@ final class CircularQueueTests: XCTestCase {
         
         // Slice implementation works too:
         sut = CircularQueue(1...10)
-        var slice = sut[1...3]
+        let slice = sut[1...3]
         var sliceBuffElements: Array<Int>!
-        let exp3 = expectation(description: "closure completes")
-        let result3 = slice.withContiguousMutableStorageIfAvailable { buff -> Bool in
-            defer { exp3.fulfill() }
-            sliceBuffElements = []
-            for i in buff.startIndex..<buff.endIndex {
-                buff[i] *= 10
-                sliceBuffElements.append(buff[i])
-            }
+        let exp4 = expectation(description: "closure completes")
+        let result3 = slice.withContiguousStorageIfAvailable { buff -> Bool in
+            defer { exp4.fulfill() }
+            sliceBuffElements = Array(buff)
             
             return true
         }
-        wait(for: [exp3], timeout: 0.1)
+        wait(for: [exp4], timeout: 0.1)
         XCTAssertNotNil(result3)
         XCTAssertEqual(sliceBuffElements, Array(slice))
-        
-        // value semantics on Slice:
-        XCTAssertNotEqual(sut, slice.base)
     }
     
     // MARK: - Functional Programming methods
