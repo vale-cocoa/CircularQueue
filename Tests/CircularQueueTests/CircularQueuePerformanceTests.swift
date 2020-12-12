@@ -22,20 +22,26 @@ import XCTest
 import CircularQueue
 
 final class CircularQueuePerformanceTests: XCTestCase {
+    var sut: (outerCount: Int, innerCount: Int)!
+    
     func testCircularQueuePerformanceAtSmallCount() {
-        measure(performanceLoopCircularQueueSmallCount)
+        whenSmallCount()
+        measure { performanceLoop(for: .circularQueue) }
     }
     
     func testArrayPerformanceAtSmallCount() {
-        measure(performanceLoopArraySmallCount)
+        whenSmallCount()
+        measure { performanceLoop(for: .array) }
     }
     
     func testCircularQueuePerformanceAtLargeCount() {
-        measure(performanceLoopCircularQueueLargeCount)
+        whenLargeCount()
+        measure { performanceLoop(for: .circularQueue) }
     }
     
     func testArrayPerformanceAtLargeCount() {
-        measure(performanceLoopArrayLargeCount)
+        whenLargeCount()
+        measure { performanceLoop(for: .array) }
     }
     
     // MARK: - Private helpers
@@ -114,4 +120,88 @@ final class CircularQueuePerformanceTests: XCTestCase {
         }
         XCTAssert(accumulator == 0)
     }
+    
+    private func whenSmallCount() {
+        sut = (10_000, 20)
+    }
+    
+    private func whenLargeCount() {
+        sut = (10, 20_000)
+    }
+    
+    private func performanceLoop(for kind: KindOfTestable) {
+        var accumulator = 0
+        for _ in 1...sut.outerCount {
+            var testable = kind.newTestable(capacity: sut.innerCount)
+            for i in 1...sut.innerCount {
+                testable.enqueue(i)
+                accumulator ^= (testable.last ?? 0)
+            }
+            for _ in 1...sut.innerCount {
+                accumulator ^= (testable.first ?? 0)
+                testable.dequeue()
+            }
+        }
+        XCTAssert(accumulator == 0)
+    }
+    
+    private enum KindOfTestable {
+        case circularQueue
+        case array
+        
+        func newTestable(capacity: Int) -> PerformanceTestable {
+            switch self {
+            case .circularQueue:
+                return CircularQueue<Int>(capacity: capacity)
+            case .array:
+                return Array<Int>(capacity: capacity)
+            }
+        }
+    }
+    
+}
+
+fileprivate protocol PerformanceTestable {
+    init(capacity: Int)
+    
+    var first: Int? { get }
+    
+    var last: Int? { get }
+    
+    mutating func enqueue(_ newElement: Int)
+    
+    @discardableResult
+    mutating func dequeue() -> Int?
+
+}
+
+extension CircularQueue: PerformanceTestable where Element == Int {
+    init(capacity: Int) {
+        self.init(capacity)
+    }
+    
+}
+
+extension Array: PerformanceTestable where Element == Int {
+    init(capacity: Int) {
+        self.init()
+        reserveCapacity(capacity)
+    }
+    
+    mutating func enqueue(_ newElement: Int) {
+        guard count + 1 < capacity else {
+            remove(at: 0)
+            append(newElement)
+            
+            return
+        }
+        
+        append(newElement)
+    }
+    
+    mutating func dequeue() -> Int? {
+        isEmpty ? nil : removeFirst()
+    }
+    
+    
 }
